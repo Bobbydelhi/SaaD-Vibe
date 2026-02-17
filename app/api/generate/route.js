@@ -2,7 +2,11 @@ import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import OpenAI from 'openai';
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+// Configuración para usar Groq (Gratis) con la librería de OpenAI
+const openai = new OpenAI({ 
+  apiKey: process.env.OPENAI_API_KEY,
+  baseURL: 'https://api.groq.com/openai/v1' // <--- ESTO ES LA CLAVE
+});
 
 export async function POST(req) {
   try {
@@ -16,45 +20,44 @@ export async function POST(req) {
     const pool = await getDb();
 
     // 2. Recuperar contexto (Los mejores prompts de esa categoría)
-    // Esto enseña al modelo qué estilo usar (Few-Shot Learning simple)
-    const contextResult = await pool.request()
-      .input('slug', categorySlug || 'text')
-      .query(`
-        SELECT TOP 2 P.Content, P.Title 
-        FROM Prompts P
-        JOIN Tools T ON P.ToolId = T.ToolId
-        JOIN Categories C ON T.CategoryId = C.CategoryId
-        WHERE C.Slug = @slug 
-        ORDER BY P.VoteCount DESC
-      `);
-
     let examples = "";
-    contextResult.recordset.forEach((row, i) => {
-      examples += `\nEjemplo ${i+1} (${row.Title}): "${row.Content}"`;
-    });
+    try {
+      const contextResult = await pool.request()
+        .input('slug', categorySlug || 'text')
+        .query(`
+          SELECT TOP 2 P.Content, P.Title 
+          FROM Prompts P
+          JOIN Tools T ON P.ToolId = T.ToolId
+          JOIN Categories C ON T.CategoryId = C.CategoryId
+          WHERE C.Slug = @slug 
+          ORDER BY P.VoteCount DESC
+        `);
 
-    // 3. Prompt de Sistema (Ingeniería de Prompts)
+      contextResult.recordset.forEach((row, i) => {
+        examples += `\nEjemplo ${i+1} (${row.Title}): "${row.Content}"`;
+      });
+    } catch (dbError) {
+      console.error("Error leyendo contexto DB:", dbError);
+      // Seguimos adelante aunque falle la DB para que la IA responda igual
+    }
+
+    // 3. Prompt de Sistema
     const systemMessage = `
       Eres SaaD Vibe AI, un arquitecto de prompts experto.
-      
-      TU MISIÓN:
-      Transformar la idea vaga del usuario en un prompt estructurado y profesional para herramientas de IA.
+      Transforma la idea del usuario en un prompt estructurado y profesional.
       
       CONTEXTO (${categorySlug}):
-      ${examples ? 'Usa estos estilos exitosos como referencia:' + examples : 'Usa las mejores prácticas generales.'}
+      ${examples ? 'Usa estos estilos exitosos como referencia:' + examples : 'Usa las mejores prácticas.'}
       
       INSTRUCCIONES:
-      - Si es para Imagen: Detalla estilo, iluminación, cámara y relación de aspecto.
-      - Si es para Texto: Define Rol, Tarea, Contexto y Formato de salida.
-      - Si es para Código: Define lenguaje, eficiencia y manejo de errores.
-      
-      SALIDA:
-      Devuelve SOLAMENTE el prompt final mejorado. Sin explicaciones extra.
+      - Genera SOLAMENTE el prompt final mejorado.
+      - No incluyas explicaciones ni texto extra.
+      - Si es código, solo el código o prompt técnico.
     `;
 
-    // 4. Llamada a OpenAI
+    // 4. Llamada a Groq (Modelo Llama-3 GRATIS)
     const completion = await openai.chat.completions.create({
-      model: "gpt-4o", // O gpt-3.5-turbo si quieres ahorrar
+      model: "llama3-8b-8192", // <--- Modelo gratis y rápido
       messages: [
         { role: "system", content: systemMessage },
         { role: "user", content: userInput }
@@ -64,7 +67,7 @@ export async function POST(req) {
 
     const generatedPrompt = completion.choices[0].message.content;
 
-    // 5. Guardar Log en SQL (Asíncrono - no bloqueamos la respuesta)
+    // 5. Guardar Log en SQL
     pool.request()
       .input('input', userInput)
       .input('output', generatedPrompt)
@@ -78,6 +81,6 @@ export async function POST(req) {
 
   } catch (error) {
     console.error('Error API Generate:', error);
-    return NextResponse.json({ error: 'Error interno del servidor' }, { status: 500 });
+    return NextResponse.json({ error: error.message || 'Error interno' }, { status: 500 });
   }
 }
