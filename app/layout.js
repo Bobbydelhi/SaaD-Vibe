@@ -8,6 +8,9 @@ const inter = Inter({ subsets: ["latin"] });
 export const metadata = {
   title: "SaaD Vibe | AI Metaprompt Engine",
   description: "Directorio y generador de prompts profesional.",
+  icons: {
+    icon: '/icon.png', 
+  },
 };
 
 export default function RootLayout({ children }) {
