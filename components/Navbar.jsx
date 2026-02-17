@@ -14,9 +14,9 @@ export default function Navbar() {
           <Link href="/tools" className="flex items-center gap-2 hover:text-primary transition-colors">
             <LayoutGrid size={16} /> Directorio
           </Link>
-          <Link href="#" className="flex items-center gap-2 hover:text-primary transition-colors">
-            <BookOpen size={16} /> Prompts
-          </Link>
+       <Link href="/prompts" className="flex items-center gap-2 hover:text-primary transition-colors">
+  <BookOpen size={16} /> Prompts
+</Link>
         </div>
         
         <button className="bg-white text-black px-4 py-2 rounded-full text-sm font-bold hover:bg-gray-200 transition-colors">
